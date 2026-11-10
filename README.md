@@ -1,34 +1,34 @@
-# Đồ án: Phản ứng sự cố chiếm quyền tài khoản email đại học
+# Project: Incident response to university email account takeover
 
-Lab mô phỏng và quy trình ứng phó sự cố (IR) cho tình huống **chiếm quyền / lạm dụng tài khoản email**
-trong trường đại học. Toàn bộ chạy **trong lab cô lập, dữ liệu và tài khoản đều giả**.
+A simulation lab and incident response (IR) process for **takeover / misuse of email accounts**
+at a university. Everything runs **in an isolated lab; all data and accounts are fake**.
 
-Ánh xạ theo NIST SP 800-61r3 (Detect / Respond / Recover):
-- **Chính sách & phân quyền** (IAM, mật khẩu, MFA, vòng đời tài khoản)
-- **Quy trình ứng phó sự cố** (tiếp nhận → kiểm soát → điều tra → khôi phục → đóng)
-- **Lab & diễn tập** (dựng hệ thống, tấn công giả lập, thu log/bằng chứng)
-- **Biểu mẫu, đo lường & báo cáo** (T0–T6, MTTD/MTTA/MTTC/MTTR, v0 vs v1)
+Mapped to NIST SP 800-61r3 (Detect / Respond / Recover):
+- **Policy & access control** (IAM, passwords, MFA, account lifecycle)
+- **Incident response process** (intake → containment → investigation → recovery → closure)
+- **Lab & drills** (building the systems, simulated attacks, collecting logs/evidence)
+- **Forms, metrics & reporting** (T0–T6, MTTD/MTTA/MTTC/MTTR, v0 vs v1)
 
-## Cấu trúc
+## Structure
 
 ```
 lab/
-  README.md     sơ đồ mạng, thứ tự dựng, giới hạn single-host
-  certs/        CA nội bộ (make-ca.sh)
-  dns/          phân giải *.lab + MX/SPF/DKIM/DMARC
-  keycloak/     Keycloak 26.8.1 + PostgreSQL + script dựng realm (IdP)
-  gophish/      GoPhish (phía tấn công) — compose; bản binary tải riêng
-  attacker/     MTA kẻ tấn công (evil.lab / uni-lab.support)
-  mailcow/      override đẩy log (mailcow cài bằng trình cài riêng)
-  wazuh/        cấu hình thu log + decoder/rule (SIEM)
-  baseline/     sinh đăng nhập hợp lệ nền
+  README.md     network diagram, build order, single-host limitations
+  certs/        internal CA (make-ca.sh)
+  dns/          *.lab resolution + MX/SPF/DKIM/DMARC
+  keycloak/     Keycloak 26.8.1 + PostgreSQL + realm build scripts (IdP)
+  gophish/      GoPhish (attacker side) — compose; binary downloaded separately
+  attacker/     attacker MTA (evil.lab / uni-lab.support)
+  mailcow/      log-shipping override (mailcow is installed with its own installer)
+  wazuh/        log collection config + decoders/rules (SIEM)
+  baseline/     generates normal background logins
 ```
 
-## Lưu ý bảo mật
-- `.env`, khoá private (`*.key`), cert, `*.db`, log, `users.csv` **không** được đưa lên repo (xem `.gitignore`).
-- Mật khẩu trong `*.example` chỉ là mẫu — đổi toàn bộ khi triển khai thật.
-- Bản GoPhish (`lab/gophish-win/`) là release tải từ GitHub, không nằm trong repo.
+## Security notes
+- `.env`, private keys (`*.key`), certificates, `*.db`, logs and `users.csv` are **not** committed (see `.gitignore`).
+- Passwords in `*.example` files are placeholders only — change all of them for a real deployment.
+- The GoPhish build (`lab/gophish-win/`) is a release downloaded from GitHub and is not in the repo.
 
-## Trạng thái triển khai
-Keycloak (realm `uni`, cấu hình v0) đã dựng trên VM lab; GoPhish dựng trên máy tấn công.
-Xem `lab/README.md` để biết chi tiết và các bước còn lại (mailcow, Wazuh, cấu hình v1).
+## Deployment status
+Keycloak (realm `uni`, v0 configuration) is built on the lab VM; GoPhish is set up on the attacker machine.
+See `lab/README.md` for details and the remaining steps (mailcow, Wazuh, v1 configuration).
