@@ -1,0 +1,158 @@
+<!-- /var/ossec/etc/rules/uni_email_rules.xml  (Wazuh 4.14.x, custom IDs 100200-100299)
+     Needs keycloak_decoders.xml and the CDB list etc/lists/campus-ips declared in ossec.conf <ruleset>.
+     Correlation gotchas: frequency=N counts N events incl. the current one; timeframe uses processing time;
+     correlation is per agent; if_matched_sid takes ONE id; different_field is not "N distinct values".
+     Not yet run on a live manager: validate each rule with wazuh-logtest (paste a line N times for frequency rules). -->
+<group name="keycloak,uni_email_lab,">
+
+  <rule id="100200" level="0">
+    <decoded_as>keycloak</decoded_as>
+    <description>Keycloak event (grouping).</description>
+  </rule>
+
+  <!-- UC1 base: failed login for an existing account -->
+  <rule id="100201" level="5">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^LOGIN_ERROR$</field>
+    <field name="kc_userid" negate="yes">^null$|^$</field>
+    <description>Keycloak: login failed for $(kc_username) from $(srcip): $(kc_error)</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failed,keycloak_login_failed,</group>
+  </rule>
+
+  <!-- UC2 base: failed login for an unknown account (userId empty or "null") -->
+  <rule id="100202" level="5">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^LOGIN_ERROR$</field>
+    <description>Keycloak: login failed for unknown user $(kc_username) from $(srcip): $(kc_error)</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failed,keycloak_login_failed,invalid_login,</group>
+  </rule>
+
+  <!-- UC1: brute force on one account -->
+  <rule id="100210" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100201</if_matched_sid>
+    <same_field>kc_userid</same_field>
+    <description>Keycloak: possible brute force - 5+ failed logins for $(kc_username) in 120s</description>
+    <mitre><id>T1110.001</id></mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- UC2: password spraying (current username differs from the 4 earlier failures from this IP).
+       For low-and-slow spraying raise timeframe (e.g. 3600) and lower frequency. -->
+  <rule id="100211" level="12" frequency="5" timeframe="900">
+    <if_matched_group>keycloak_login_failed</if_matched_group>
+    <same_srcip />
+    <different_field>kc_username</different_field>
+    <description>Keycloak: possible password spraying from $(srcip) across multiple usernames</description>
+    <mitre><id>T1110.003</id></mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- Lockout fired by Keycloak brute-force protection (success event) -->
+  <rule id="100212" level="9">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^USER_DISABLED_BY_TEMPORARY_LOCKOUT$|^USER_DISABLED_BY_PERMANENT_LOCKOUT$</field>
+    <description>Keycloak: account $(kc_userid) locked by brute-force protection (last IP $(srcip))</description>
+    <mitre><id>T1110</id></mitre>
+  </rule>
+
+  <!-- UC3: successful login from outside the campus / known ranges (expect false positives: home-gv01, D3a) -->
+  <rule id="100250" level="7">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^LOGIN$</field>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/campus-ips</list>
+    <description>Keycloak: login by $(kc_username) from non-campus IP $(srcip) (client $(kc_client))</description>
+    <mitre><id>T1078</id></mitre>
+    <group>keycloak_offcampus_login,</group>
+  </rule>
+
+  <!-- Direct Grant (password grant) login: legacy path that skips browser-flow MFA rules -->
+  <rule id="100251" level="8">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^LOGIN$</field>
+    <field name="kc_grant">^password$</field>
+    <description>Keycloak: password-grant (Direct Grant) login by $(kc_username) from $(srcip) via $(kc_client)</description>
+    <mitre><id>T1078</id></mitre>
+  </rule>
+
+  <!-- UC15: break-glass account used -->
+  <rule id="100260" level="13">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^LOGIN$</field>
+    <field name="kc_username">^bg</field>
+    <description>Keycloak: BREAK-GLASS account $(kc_username) logged in from $(srcip) - verify against the break-glass log</description>
+    <mitre><id>T1078.003</id></mitre>
+  </rule>
+
+  <!-- UC6: second factor added/changed (new and legacy event names) -->
+  <rule id="100240" level="8">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^UPDATE_CREDENTIAL$</field>
+    <field name="kc_credtype">^otp$|^webauthn</field>
+    <description>Keycloak: $(kc_credtype) credential registered for $(kc_username) from $(srcip)</description>
+    <mitre><id>T1556.006</id></mitre>
+    <group>keycloak_mfa_change,</group>
+  </rule>
+  <rule id="100241" level="8">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^UPDATE_TOTP$|^REMOVE_TOTP$|^REMOVE_CREDENTIAL$</field>
+    <description>Keycloak: $(kc_type) for $(kc_username) from $(srcip)</description>
+    <mitre><id>T1556.006</id></mitre>
+    <group>keycloak_mfa_change,</group>
+  </rule>
+  <!-- UC8: MFA registered from a non-campus IP = likely attacker self-enrolment (persistence) -->
+  <rule id="100242" level="12">
+    <if_sid>100240,100241</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/campus-ips</list>
+    <description>Keycloak: MFA change for $(kc_username) from non-campus IP $(srcip) - possible attacker self-enrolment</description>
+    <mitre><id>T1098.005</id></mitre>
+  </rule>
+
+  <!-- UC7: impersonation (needs success-level=info) and after-hours escalation -->
+  <rule id="100220" level="12">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^IMPERSONATE$</field>
+    <description>Keycloak: $(kc_impersonator) impersonated userId $(kc_userid) from $(srcip)</description>
+    <mitre><id>T1078</id></mitre>
+    <group>keycloak_impersonation,</group>
+  </rule>
+  <rule id="100222" level="14">
+    <if_sid>100220</if_sid>
+    <time>18:00 - 07:00</time>
+    <description>Keycloak: AFTER-HOURS impersonation by $(kc_impersonator) of userId $(kc_userid) - escalate to Truong nhom ATTT</description>
+    <mitre><id>T1078</id></mitre>
+  </rule>
+  <rule id="100221" level="8">
+    <if_sid>100200</if_sid>
+    <field name="kc_type">^IMPERSONATE_ERROR$</field>
+    <description>Keycloak: failed impersonation attempt from $(srcip): $(kc_error)</description>
+  </rule>
+
+  <!-- Admin audit: credentials deleted / passwords reset by an admin (match against helpdesk tickets YC-02) -->
+  <rule id="100270" level="6">
+    <if_sid>100200</if_sid>
+    <field name="kc_resource_path">/credentials/|/reset-password</field>
+    <description>Keycloak admin action $(kc_operation) on $(kc_resource_path) by admin userId $(kc_userid) from $(srcip)</description>
+    <mitre><id>T1098</id></mitre>
+  </rule>
+</group>
+
+<group name="dovecot,uni_email_lab,">
+  <!-- Lab-threshold versions of built-ins 9750/9751 (8 events). Only work if mailcow lines reach the built-in
+       dovecot decoders (program_name ^dovecot) - check for the double syslog header first. -->
+  <rule id="100230" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>9705</if_matched_sid>
+    <same_srcip />
+    <description>Dovecot: 5+ failed logins (auth failed / unknown user) from $(srcip) in 120s</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failures,</group>
+  </rule>
+  <rule id="100231" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>9702</if_matched_sid>
+    <same_srcip />
+    <description>Dovecot: 5+ password mismatches from $(srcip) in 120s</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failures,</group>
+  </rule>
+</group>

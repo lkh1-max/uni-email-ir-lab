@@ -1,0 +1,18 @@
+# Wazuh manager-only (nhẹ ~1GB) cho lab IR email. Không indexer/dashboard.
+# Đọc cảnh báo tại /var/ossec/logs/alerts/alerts.json (xem bằng docker exec).
+services:
+  wazuh:
+    image: wazuh/wazuh-manager:4.9.2
+    container_name: wazuh
+    hostname: wazuh-manager
+    restart: unless-stopped
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 655360, hard: 655360}
+    volumes:
+      - ../keycloak/kc-log:/var/log/lab/keycloak:ro      # keycloak.log
+      - ../mail-lite/dms/mail-logs:/var/log/lab/mail:ro   # mail.log
+    networks: [labnet]
+networks:
+  labnet:
+    external: true

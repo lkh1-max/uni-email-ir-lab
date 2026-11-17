@@ -1,0 +1,38 @@
+===== BẰNG CHỨNG PHÁT HIỆN BẰNG SIEM (Wazuh manager-only) =====
+Ngày 2026-11-17 (log UTC). VM 192.168.78.128. Wazuh 4.9.2 (manager-only, ~1 GB RAM).
+Nguồn log: Keycloak keycloak.log (đọc qua localfile syslog). Decoder + rule tùy biến UC1–UC9.
+
+=== 1) Nạp decoder/rule — kiểm bằng wazuh-logtest (log thật) ===
+Đầu vào: dòng LOGIN_ERROR thật của Keycloak.
+Phase 2 (decode): name=keycloak; kc_type=LOGIN_ERROR; kc_username=sv01;
+  kc_userid=509e4682-...; srcip=172.18.0.1; kc_error=invalid_user_credentials; kc_grant=password.
+Phase 3 (rule): id=100201, level=5, MITRE T1110 "Brute Force". => decoder + rule KHỚP log thật.
+Correlation 100210 (brute-force): dán 5 dòng -> fired:
+  "Keycloak: possible brute force - 5+ failed logins for sv01 in 120s" (level 10).
+
+=== 2) Tấn công thật -> cảnh báo sinh ra tự động (alerts.json) ===
+T0 (bắt đầu brute-force sv01) = 11:39:25 UTC.
+Cảnh báo brute-force 100210 (trích alerts.json):
+  {"timestamp":"2026-11-17T11:39:31.626+0000","rule":{"level":10,
+   "description":"Keycloak: possible brute force - 5+ failed logins for sv01 in 120s",
+   "id":"100210","mitre":{"id":["T1110.001"],"tactic":["Credential Access"],
+   "technique":["Password Guessing"]},"frequency":5,"firedtimes":1,...}
+
+=> MTTD (thời gian phát hiện) = T_alert - T0 = 11:39:31 - 11:39:25 ≈ 6–7 giây.
+
+Tổng hợp cảnh báo (đếm theo rule):
+  100201 (login thất bại)            x18
+  100210 (brute-force 5+/120s)       x1   <- phát hiện tấn công
+  100212 (tài khoản bị khóa)         x1   <- Keycloak lockout được ghi nhận
+
+=== 3) Trả lời câu hỏi nghiên cứu ===
+Q3 (phát hiện qua nhật ký nào, nhanh ra sao): Wazuh phát hiện brute-force từ log Keycloak,
+   MTTD ≈ 6–7 giây (tự động, near-real-time) — có số liệu định lượng.
+
+=== 4) Giới hạn trung thực ===
+- Rule spraying 100211 (một IP, nhiều username) KHÔNG fire trong lab: vì chạy single-host,
+  mọi nguồn gộp về gateway Docker 172.18.0.1, nên không phân biệt được "rải mật khẩu theo IP"
+  với "brute-force". Correlation different_field của Wazuh cũng rất nhạy cảm (tài liệu cảnh báo).
+  -> Hướng khắc phục: phân vùng mạng để có IP nguồn tách biệt (thiết kế 2 máy / Chương Thiết kế),
+     hoặc viết lại rule đếm số username phân biệt thay vì different_field.
+- MTTD ~6s là tốc độ tự động của logcollector+analysisd, không phải tốc độ phản ứng con người.

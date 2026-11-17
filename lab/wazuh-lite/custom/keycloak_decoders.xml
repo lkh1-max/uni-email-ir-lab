@@ -1,0 +1,24 @@
+<!-- /var/ossec/etc/decoders/keycloak_decoders.xml  (Wazuh 4.14.x)
+     Input: Keycloak plain-text log lines from the org.keycloak.events logger, e.g.
+     2026-11-05 07:15:01,123 WARN  [org.keycloak.events] (executor-thread-3) type="LOGIN_ERROR", realmId="...", realmName="uni",
+       clientId="mailcow", userId="8f2d...", ipAddress="203.0.113.66", error="invalid_user_credentials", auth_method="openid-connect", username="sv01"
+     Sibling decoders: one field each, order-independent (documented Wazuh pattern).
+     Run every real line through /var/ossec/bin/wazuh-logtest -v before trusting the rules. -->
+<decoder name="keycloak">
+  <prematch type="pcre2">\[org\.keycloak\.events\]</prematch>
+</decoder>
+
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\btype="([^"]+)"</regex><order>kc_type</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">operationType="?([A-Z_]+)</regex><order>kc_operation</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">realmName="?([^",]*)</regex><order>kc_realm</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">clientId="?([^",]*)</regex><order>kc_client</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">userId="?([^",]*)</regex><order>kc_userid</order></decoder>
+<!-- srcip is a static field: enables same_srcip, CDB address lists and active response -->
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">ipAddress="?([0-9a-fA-F:.]+)</regex><order>srcip</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\berror="([^"]+)"</regex><order>kc_error</order></decoder>
+<!-- dynamic on purpose: same_field/different_field only work on dynamic fields -->
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\busername="([^"]*)"</regex><order>kc_username</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\bcredential_type="([^"]*)"</regex><order>kc_credtype</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\bgrant_type="([^"]*)"</regex><order>kc_grant</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">\bimpersonator="([^"]*)"</regex><order>kc_impersonator</order></decoder>
+<decoder name="keycloak"><parent>keycloak</parent><regex type="pcre2">resourcePath="?([^",]*)</regex><order>kc_resource_path</order></decoder>
